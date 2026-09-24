@@ -29,23 +29,24 @@ else if (depth === 25) moveTimeMs = isLegacy ? 25000 : 15000;
   
   document.getElementById('loadingOverlay').classList.add('active');
   const tempGame = new Chess();
+  const analysisMultiPv = Math.max(2, parseInt(document.getElementById('multipvInput').value) || 1);
   
   try {
-    let beforeResult = await analyzePosition(tempGame.fen(), depth, moveTimeMs, 1);
+    let beforeResult = await analyzePosition(tempGame.fen(), depth, moveTimeMs, analysisMultiPv);
     
     for (let i = 0; i < moves.length; i++) {
       const move = moves[i];
       const fenBefore = tempGame.fen();
       
       tempGame.move(move);
-      const afterResult = await analyzePosition(tempGame.fen(), depth, moveTimeMs, 1);
+      const afterResult = await analyzePosition(tempGame.fen(), depth, moveTimeMs, analysisMultiPv);
       
       const moverEvalBefore = beforeResult.score;
       const moverEvalAfter = -afterResult.score;
       const cpLoss = Math.max(0, moverEvalBefore - moverEvalAfter);
       
       const isSacrifice = detectSacrifice(fenBefore, move);
-      const classification = classifyMove(move.san, beforeResult.bestMove, cpLoss, isSacrifice, i, fenBefore);
+      const classification = classifyMove(move.san, beforeResult.bestMove, cpLoss, isSacrifice, i, fenBefore, beforeResult.lines);
       
       moveAnalysis.push({
         move: move,
@@ -110,7 +111,7 @@ function detectSacrifice(fenBefore, move) {
   }
 }
 
-function classifyMove(san, bestMove, cpLoss, isSacrifice, ply, fenBefore) {
+function classifyMove(san, bestMove, cpLoss, isSacrifice, ply, fenBefore, lines) {
   // If using legacy engine, be more forgiving (it's less accurate)
   const isLegacy = engineType === 'legacy';
   const thresholdMultiplier = isLegacy ? 2.5 : 1;
@@ -123,9 +124,12 @@ function classifyMove(san, bestMove, cpLoss, isSacrifice, ply, fenBefore) {
     return isSacrifice ? 'brilliant' : 'best';
   }
   
-  // Tiered classification based on centipawn loss
-  // More forgiving thresholds for legacy engine
-  if (cpLoss <= 20 * thresholdMultiplier) return 'great';
+  if (cpLoss <= 20 * thresholdMultiplier) {
+    const line1 = lines && lines.find(l => l.multipv === 1);
+    const line2 = lines && lines.find(l => l.multipv === 2);
+    const alternativeGap = (line1 && line2) ? (line1.score - line2.score) : 0;
+    return alternativeGap >= 100 * thresholdMultiplier ? 'great' : 'good';
+  }
   if (cpLoss <= 50 * thresholdMultiplier) return 'good';
   if (cpLoss <= 100 * thresholdMultiplier) return 'miss';
   if (cpLoss <= 250 * thresholdMultiplier) return 'bad';
@@ -164,9 +168,6 @@ function calculateStatistics() {
     if (analysis.classification === 'blunder') blunders++;
     if (analysis.classification === 'brilliant') brilliants++;
     if (analysis.classification === 'miss' || analysis.classification === 'bad') misses++;
-    // Book moves are opening theory, not the engine's top choice — keep
-    // them out of "Best Moves" so this stat doesn't contradict a move
-    // that's badged BOOK in the move list.
     if (analysis.classification === 'best') bestMoves++;
   });
   

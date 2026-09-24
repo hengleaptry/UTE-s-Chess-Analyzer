@@ -505,9 +505,11 @@ async function recordFreePlayMove(mv, fenBefore) {
   setStatus('Engine thinking...', 'loading');
   
   try {
+    // Needs at least 2 lines so classifyMove can tell a narrow/critical
+    // position from a flexible one before awarding a "great" badge.
     let beforeResult = freePlayBeforeResult;
     if (!beforeResult || beforeResult.fen !== fenBefore) {
-      const r = await analyzePosition(fenBefore, depth, moveTimeMs, 1);
+      const r = await analyzePosition(fenBefore, depth, moveTimeMs, 2);
       if (myToken !== exploreToken) return;
       beforeResult = Object.assign({}, r, { fen: fenBefore });
     }
@@ -516,7 +518,7 @@ async function recordFreePlayMove(mv, fenBefore) {
     if (game.game_over()) {
       afterResult = { score: game.in_checkmate() ? -10000 : 0, bestMove: null, pv: [], lines: [], fen: fenAfter };
     } else {
-      const r = await analyzePosition(fenAfter, depth, moveTimeMs, 1);
+      const r = await analyzePosition(fenAfter, depth, moveTimeMs, 2);
       if (myToken !== exploreToken) return;
       afterResult = Object.assign({}, r, { fen: fenAfter });
     }
@@ -525,7 +527,7 @@ async function recordFreePlayMove(mv, fenBefore) {
     const moverEvalAfter = -afterResult.score;
     const cpLoss = Math.max(0, moverEvalBefore - moverEvalAfter);
     const isSacrifice = detectSacrifice(fenBefore, mv);
-    const classification = classifyMove(mv.san, beforeResult.bestMove, cpLoss, isSacrifice, ply, fenBefore);
+    const classification = classifyMove(mv.san, beforeResult.bestMove, cpLoss, isSacrifice, ply, fenBefore, beforeResult.lines);
     
     moveAnalysis[ply] = {
       move: mv, fenBefore, fenAfter, bestMove: beforeResult.bestMove,
