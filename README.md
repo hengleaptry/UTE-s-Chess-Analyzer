@@ -42,14 +42,6 @@ Whether you are analyzing grandmaster games, reviewing your own matches, or expl
 * **Engine:** [Stockfish 16 NNUE](https://stockfishchess.org/) (Compiled to WebAssembly/JS)
 * **APIs:** [Lichess Opening Explorer API](https://lichess.org/api#tag/Opening-Explorer)
 
-## 📸 Screenshots
-
-*(Note: Replace these placeholders with actual screenshots of your app)*
-
-| Board & Eval Graph | Move Classification | Opening Explorer |
-| :---: | :---: | :---: |
-| ![Board](https://via.placeholder.com/300x200?text=Board+View) | ![Moves](https://via.placeholder.com/300x200?text=Move+List) | ![Explorer](https://via.placeholder.com/300x200?text=Explorer) |
-
 ## 🚀 Getting Started
 
 ### Prerequisites
