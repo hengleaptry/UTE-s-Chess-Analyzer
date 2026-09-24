@@ -1,34 +1,68 @@
-# Pro Chess Analyzer
+# ♟ UTE's Chess Analyzer
 
-A highly accurate, browser-based chess analysis tool built with Stockfish 16 NNUE. Features Chess.com-calibrated move classification, an evaluation graph, free-play mode, and custom board annotations.
+**A professional, browser-based chess analysis engine powered by Stockfish 16 NNUE.**
 
-## Features
-- **High-Accuracy Analysis**: Perspective-safe centipawn math and dynamic time allocation ensure the engine reaches target depths reliably.
-- **Chess.com Classification**: Accurately labels moves as Book, Best, Brilliant, Great, Good, Miss, Bad, or Blunder.
-- **True Sacrifice Detection**: Compares full board material before and after a move to detect positional sacrifices.
-- **Evaluation Graph**: Visualizes the game's momentum over time.
-- **Free Play & Explore**: Play from any position or branch off a loaded game.
-- **Annotations**: Right-click and drag to draw arrows; right-click a square to highlight it.
-- **Export**: Download your analysis as PGN (with comments), JSON, or the Eval Graph as a PNG.
+Developed by **Hengleap Try (Zer0Sugar)** for the **University for Technology and Entrepreneurship (UTE)**.
 
-## Setup & Running
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![Stockfish](https://img.shields.io/badge/engine-Stockfish_16_NNUE-green.svg)
+![Status](https://img.shields.io/badge/status-Production_ready-brightgreen.svg)
 
-Because this project uses Web Workers and WebAssembly (for Stockfish), **you cannot open `index.html` directly via the `file://` protocol**. Browsers block Workers/WASM from local files for security reasons.
+---
 
-You must serve it via a local HTTP server.
+## 📖 Overview
+
+UTE's Chess Analyzer brings desktop-grade chess engine analysis directly to the browser. By leveraging WebAssembly to run Stockfish 16 NNUE locally within the user's browser, it provides high-accuracy evaluations, perspective-safe centipawn mathematics, and Chess.com-calibrated move classifications without requiring a backend server. 
+
+Whether you are analyzing grandmaster games, reviewing your own matches, or exploring opening theory via the Lichess API, this tool provides a seamless, professional-grade experience.
+
+## ✨ Key Features
+
+### 🧠 Advanced Engine Analysis
+* **Stockfish 16 NNUE:** Runs locally via WebAssembly for zero-latency, high-depth analysis.
+* **Perspective-Safe Math:** Accurately calculates centipawn (CP) loss by dynamically flipping evaluation perspectives between White and Black.
+* **Dynamic Time Allocation:** Intelligently allocates search time based on requested depth to prevent shallow, noisy evaluations.
+
+###  Professional UI/UX
+* **Chess.com-Style Classifications:** Automatically labels moves as *Book, Best, Brilliant, Great, Good, Miss, Bad,* or *Blunder*.
+* **True Sacrifice Detection:** Analyzes full-board material states before and after a move to accurately detect positional sacrifices and gambits.
+* **Evaluation Graph:** A dynamic, canvas-rendered graph visualizing the game's momentum over time.
+* **Drag-and-Drop:** Intuitive piece movement with legal move highlighting.
+
+### 📚 Integrations & Tools
+* **Lichess Opening Explorer:** Fetches real-time master-level win/draw/loss statistics for any position.
+* **Custom Annotations:** Right-click to draw arrows or highlight squares for study and presentation.
+* **Free Play & Explore:** Play from any position with live engine feedback, or branch off loaded PGNs.
+* **Export Suite:** Download analyzed games as annotated PGNs, raw JSON data, or the evaluation graph as a PNG.
+
+## 🛠️ Tech Stack
+
+* **Frontend:** HTML5, CSS3 (Custom Glassmorphism UI), Vanilla JavaScript (ES6+)
+* **Chess Logic:** [Chess.js](https://github.com/jhlywa/chess.js)
+* **Engine:** [Stockfish 16 NNUE](https://stockfishchess.org/) (Compiled to WebAssembly/JS)
+* **APIs:** [Lichess Opening Explorer API](https://lichess.org/api#tag/Opening-Explorer)
+
+## 📸 Screenshots
+
+*(Note: Replace these placeholders with actual screenshots of your app)*
+
+| Board & Eval Graph | Move Classification | Opening Explorer |
+| :---: | :---: | :---: |
+| ![Board](https://via.placeholder.com/300x200?text=Board+View) | ![Moves](https://via.placeholder.com/300x200?text=Move+List) | ![Explorer](https://via.placeholder.com/300x200?text=Explorer) |
+
+## 🚀 Getting Started
+
+### Prerequisites
+Because this project uses **Web Workers** and **WebAssembly** to run the Stockfish engine, modern browsers will block the engine if opened directly via the `file://` protocol due to CORS security restrictions. **You must serve the project via a local HTTP server.**
 
 ### Option 1: VS Code Live Server (Recommended)
-1. Open the `chess-analyzer` folder in VS Code.
-2. Install the "Live Server" extension by Ritwick Dey.
-3. Right-click `index.html` and select "Open with Live Server".
+1. Open the project folder in Visual Studio Code.
+2. Install the **Live Server** extension by Ritwick Dey.
+3. Right-click `index.html` and select **"Open with Live Server"**.
+4. The app will launch at `http://127.0.0.1:5500`.
 
 ### Option 2: Python Local Server
-1. Open your terminal in the `chess-analyzer` folder.
-2. Run: `python3 -m http.server 8000`
-3. Open `http://localhost:8000` in your browser.
-
-### Option 3: Node.js
-1. Run: `npx serve .`
-2. Open the provided localhost URL.
-
-## File Structure
+1. Open your terminal in the project root directory.
+2. Run the following command:
+   ```bash
+   python3 -m http.server 8000
