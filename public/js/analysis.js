@@ -89,28 +89,38 @@ else if (depth === 25) moveTimeMs = isLegacy ? 25000 : 15000;
   }
 }
 
+// NOTE: an earlier version of this function compared the mover's own total
+// material immediately before vs. immediately after their own move. That
+// comparison can never be true — a single legal chess move can't reduce the
+// mover's own material (captures only remove the opponent's piece,
+// promotions only ever increase value, castling doesn't change piece
+// count) — so `isSacrifice` always evaluated false and `Brilliant` was
+// unreachable. Real sacrifice detection has to look one ply further: is the
+// piece that just moved sitting somewhere the opponent can immediately take
+// it back for less than it's worth?
 function detectSacrifice(fenBefore, move) {
   try {
     const g = new Chess(fenBefore);
-    const getMat = (gameInstance) => {
-      let w = 0, b = 0;
-      gameInstance.board().forEach(row => row.forEach(p => {
-        if (p) {
-          const v = PIECE_VALUES[p.type];
-          if (p.color === 'w') w += v; else b += v;
-        }
-      }));
-      return { w, b };
-    };
-    
-    const before = getMat(g);
-    g.move(move);
-    const after = getMat(g);
-    
-    const moverBefore = move.color === 'w' ? before.w : before.b;
-    const moverAfter = move.color === 'w' ? after.w : after.b;
-    
-    return (moverBefore - moverAfter) >= 100;
+    const mv = g.move(move);
+    if (!mv) return false;
+
+    const destSquare = mv.to;
+    const movedPieceValue = PIECE_VALUES[mv.piece];
+
+    // It's now the opponent's turn (g.move() flipped it) — find their
+    // cheapest way to recapture on the square the mover just landed on.
+    const recaptures = g
+      .moves({ verbose: true })
+      .filter((m) => m.to === destSquare && m.captured);
+
+    if (recaptures.length === 0) return false; // nothing can take it back — not a sacrifice
+
+    const cheapestRecapture = Math.min(...recaptures.map((m) => PIECE_VALUES[m.piece]));
+
+    // A sacrifice: what the mover put there is worth meaningfully more
+    // than what the opponent has to give up to take it (matches the
+    // existing >=100cp / "at least a minor piece" bar used elsewhere).
+    return (movedPieceValue - cheapestRecapture) >= 100;
   } catch (e) {
     return false;
   }
@@ -165,18 +175,20 @@ function isMoveEquivalent(san, uci, fenBefore) {
   }
 }
 
-function calculateStatistics() {
-  if (moveAnalysis.length === 0) return;
-  
+// Pure computation, no DOM — takes a moveAnalysis[] array and returns the
+// same numbers calculateStatistics() renders. Split out specifically so this
+// math (accuracy formula, counts) is unit-testable on its own; see
+// tests/unit/analysis.test.js.
+function computeGameStats(moveAnalysis) {
   let whiteTotalLoss = 0, blackTotalLoss = 0, whiteMoves = 0, blackMoves = 0;
   let blunders = 0, brilliants = 0, misses = 0, bestMoves = 0;
-  
+
   moveAnalysis.forEach((analysis, i) => {
     if (!analysis) return;
     const isWhite = i % 2 === 0;
     if (isWhite) { whiteTotalLoss += analysis.cpLoss; whiteMoves++; }
     else { blackTotalLoss += analysis.cpLoss; blackMoves++; }
-    
+
     if (analysis.classification === 'blunder') blunders++;
     if (analysis.classification === 'brilliant') brilliants++;
     if (analysis.classification === 'miss' || analysis.classification === 'bad') misses++;
@@ -185,19 +197,27 @@ function calculateStatistics() {
     // that's badged BOOK in the move list.
     if (analysis.classification === 'best') bestMoves++;
   });
-  
+
   const maxLossPerMove = 500;
-  const whiteAcc = whiteMoves === 0 ? 100 : Math.max(0, 100 - (whiteTotalLoss / (whiteMoves * maxLossPerMove)) * 100);
-  const blackAcc = blackMoves === 0 ? 100 : Math.max(0, 100 - (blackTotalLoss / (blackMoves * maxLossPerMove)) * 100);
-  
-  document.getElementById('whiteAccuracy').textContent = whiteAcc.toFixed(1) + '%';
-  document.getElementById('blackAccuracy').textContent = blackAcc.toFixed(1) + '%';
-  document.getElementById('whiteAccBar').style.width = whiteAcc + '%';
-  document.getElementById('blackAccBar').style.width = blackAcc + '%';
-  
-  document.getElementById('blunderCount').textContent = blunders;
-  document.getElementById('brilliantCount').textContent = brilliants;
-  document.getElementById('missCount').textContent = misses;
-  document.getElementById('bestMoveCount').textContent = bestMoves;
+  const whiteAccuracy = whiteMoves === 0 ? 100 : Math.max(0, 100 - (whiteTotalLoss / (whiteMoves * maxLossPerMove)) * 100);
+  const blackAccuracy = blackMoves === 0 ? 100 : Math.max(0, 100 - (blackTotalLoss / (blackMoves * maxLossPerMove)) * 100);
+
+  return { whiteAccuracy, blackAccuracy, blunders, brilliants, misses, bestMoves };
+}
+
+function calculateStatistics() {
+  if (moveAnalysis.length === 0) return;
+
+  const stats = computeGameStats(moveAnalysis);
+
+  document.getElementById('whiteAccuracy').textContent = stats.whiteAccuracy.toFixed(1) + '%';
+  document.getElementById('blackAccuracy').textContent = stats.blackAccuracy.toFixed(1) + '%';
+  document.getElementById('whiteAccBar').style.width = stats.whiteAccuracy + '%';
+  document.getElementById('blackAccBar').style.width = stats.blackAccuracy + '%';
+
+  document.getElementById('blunderCount').textContent = stats.blunders;
+  document.getElementById('brilliantCount').textContent = stats.brilliants;
+  document.getElementById('missCount').textContent = stats.misses;
+  document.getElementById('bestMoveCount').textContent = stats.bestMoves;
   document.getElementById('statsPanel').style.display = 'block';
 }

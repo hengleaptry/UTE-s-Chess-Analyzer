@@ -38,6 +38,7 @@ npm start
 - [Architecture](#architecture)
 - [Backend & API](#backend--api)
 - [Authentication & Security](#authentication--security)
+- [Testing](#testing)
 - [How the Engine Loads](#how-the-engine-loads)
 - [Implementation Deep Dives](#implementation-deep-dives)
 - [Browser Support](#browser-support)
@@ -76,6 +77,7 @@ npm start
 | Database      | [SQLite](https://www.sqlite.org/) via [better-sqlite3](https://github.com/WiseLibs/better-sqlite3) |
 | Auth          | [bcryptjs](https://github.com/dcodeIO/bcrypt.js) password hashing + [JWT](https://github.com/auth0/node-jsonwebtoken) in an httpOnly cookie |
 | Security middleware | [helmet](https://helmetjs.github.io/) (CSP) + [express-rate-limit](https://github.com/express-rate-limit/express-rate-limit) |
+| Testing       | Node's built-in [`node:test`](https://nodejs.org/api/test.html) runner + `assert` — no separate test framework |
 
 ## Getting Started
 
@@ -108,6 +110,14 @@ For local development with auto-restart on file changes:
 ```bash
 npm run dev
 ```
+
+### Run tests
+
+```bash
+npm test
+```
+
+See [Testing](#testing) for what's actually covered.
 
 ### Running without the backend
 
@@ -192,14 +202,17 @@ return 'blunder';
 | ≤ 250 | ≤ 625 | `bad` |
 | above that | above that | `blunder` |
 
-**Brilliant** is `best` (matches the engine's top move) *plus* a real material sacrifice, detected by comparing the mover's total material immediately before and after the move:
+**Brilliant** is `best` (matches the engine's top move) *plus* a real material sacrifice — checked by seeing whether the piece the mover just placed is immediately recapturable by the opponent for less than it's worth:
 
 ```js
 function detectSacrifice(fenBefore, move) {
-  // ...compute total piece value for the mover before and after the move
-  return (moverBefore - moverAfter) >= 100; // lost at least a minor piece's worth, on purpose
+  // ...after applying the move, find the opponent's cheapest way to
+  // recapture on the square the mover just landed on
+  return (movedPieceValue - cheapestRecapture) >= 100; // gave up at least a minor piece's worth, on purpose
 }
 ```
+
+This wasn't the original implementation. The first version compared the mover's own total material immediately *before* vs. *after their own move* — which is structurally impossible to ever show a decrease, since a single legal chess move can't reduce the mover's own material (captures only remove the opponent's piece, promotions only ever add value, castling doesn't change piece count). That meant `Brilliant` was unreachable dead code for the entire life of this feature, and it was only caught by trying to write a real test case for it and being unable to construct one that should pass — see [Testing](#testing) for the full story.
 
 **Great** is the subtlest one. A move that loses 0cp but wasn't the engine's literal #1 pick isn't necessarily impressive — in a flexible position, several moves might be equally fine. To tell a genuinely critical moment from an ordinary one, the app requests the engine's **top 2 lines** (not just 1) and checks the *gap* between them:
 
@@ -293,27 +306,32 @@ A few terms used throughout the settings and tables above, for anyone not alread
 ├── .env.example
 ├── data/                  # SQLite database file lives here at runtime (git-ignored)
 ├── src/                   # Backend
-│   ├── server.js          # Express app: middleware, static serving, route mounting
-│   ├── db.js               # SQLite connection & schema
+│   ├── app.js             # Express app factory — no side effects, importable by tests
+│   ├── server.js          # Thin entrypoint: loads .env, calls createApp().listen()
+│   ├── db.js               # SQLite connection & schema (DB_PATH configurable for tests)
 │   ├── middleware/
 │   │   └── auth.js          # JWT cookie signing/verification, requireAuth guard
 │   └── routes/
 │       ├── auth.js           # POST /register, /login, /logout, GET /me
 │       └── games.js           # CRUD for saved games (all routes require auth)
-└── public/                # Frontend (served statically by Express)
-    ├── index.html          # App shell / layout
-    ├── css/
-    │   └── styles.css       # All styling
-    └── js/
-        ├── utils.js          # Constants, icons, PGN/FEN helpers
-        ├── engine.js         # Stockfish worker loading & UCI communication
-        ├── annotations.js    # Right-click arrows & square highlights
-        ├── board.js          # Board rendering, drag/drop, free-play logic
-        ├── analysis.js       # Move classification & game statistics
-        ├── ui.js              # Eval graph, audio, export, opening explorer
-        ├── main.js             # Init, PGN loading, move navigation
-        ├── auth.js             # Login/register modal, session state
-        └── games.js             # Save/list/load/delete games via the API
+├── public/                # Frontend (served statically by Express)
+│   ├── index.html          # App shell / layout
+│   ├── css/
+│   │   └── styles.css       # All styling
+│   └── js/
+│       ├── utils.js          # Constants, icons, PGN/FEN helpers
+│       ├── engine.js         # Stockfish worker loading & UCI communication
+│       ├── annotations.js    # Right-click arrows & square highlights
+│       ├── board.js          # Board rendering, drag/drop, free-play logic
+│       ├── analysis.js       # Move classification, computeGameStats(), game statistics
+│       ├── ui.js              # Eval graph, audio, export, opening explorer
+│       ├── main.js             # Init, PGN loading, move navigation
+│       ├── auth.js             # Login/register modal, session state
+│       └── games.js             # Save/list/delete + buildMoveAnalysisFromStored()
+└── tests/
+    ├── unit/                # utils.js, analysis.js, games.js — pure logic, via vm sandbox
+    ├── integration/         # auth + games routes, against a real in-memory-DB server
+    └── helpers/             # testServer.js, testClient.js, loadFrontendScript.js
 ```
 
 ## Architecture
@@ -345,7 +363,9 @@ Engine analysis never leaves the browser — the backend only ever sees a finish
 
 ## Backend & API
 
-All API routes are mounted under `/api`. Every `games` route requires a valid session; `auth` routes are additionally rate-limited (30 requests / 15 min per IP) against brute-force and signup spam.
+All API routes are mounted under `/api`. Every `games` route requires a valid session. Both route groups are rate-limited per IP (15-minute window): `auth` at 30 requests (brute-force / signup-spam protection), `games` at 200 requests (generous enough for normal use, but not unlimited — see [Testing](#testing) for how this is exercised).
+
+The Express app itself is built in `src/app.js` as a plain factory function (`createApp()`) with no side effects — `src/server.js` is a thin wrapper that loads `.env` and calls `.listen()`. This split exists specifically so tests can import and mount the real app against an ephemeral port without needing to bind the configured `PORT` or touch the real database file.
 
 | Method | Route | Auth required | Description |
 |--------|-------|:---:|-------------|
@@ -358,7 +378,8 @@ All API routes are mounted under `/api`. Every `games` route requires a valid se
 | `POST` | `/api/games` | ✅ | Save an analyzed game. Body: `{ title, pgn, whitePlayer, blackPlayer, result, whiteAccuracy, blackAccuracy, analysis }`. |
 | `DELETE` | `/api/games/:id` | ✅ | Delete a saved game. `404` if it doesn't belong to you. |
 
-Database schema (`src/db.js`) is two tables: `users` (id, username, bcrypt password hash) and `games` (id, `user_id` foreign key with `ON DELETE CASCADE`, title, pgn, player names, result, accuracies, and `analysis_json` — the serialized move classification array). Deleting a user deletes their saved games automatically via the foreign key.
+Database schema (`src/db.js`) is two tables: `users` (id, username, bcrypt password hash) and `games` (id, `user_id` foreign key with `ON DELETE CASCADE`, title, pgn, player names, result, accuracies, and `analysis_json` — the serialized move classification array). Deleting a user deletes their saved games automatically via the foreign key. `DB_PATH` is configurable via environment variable specifically so tests can point it at `:memory:` instead of the real data file.
+
 
 ## Authentication & Security
 
@@ -371,6 +392,29 @@ A few choices here are worth calling out explicitly rather than leaving implicit
 - **All SQL is parameterized** via `better-sqlite3`'s prepared statements (`?` placeholders) — no string-concatenated queries anywhere, so there's no SQL injection surface from user-supplied `username`/`title`/etc.
 - **Input size limits** are enforced server-side (PGN capped at 200KB, analysis payload at 2MB, JSON body at 3MB) so a malicious or buggy client can't fill the database with oversized rows.
 - **Content-Security-Policy** (via `helmet`) is scoped tightly to exactly what this app needs to load: scripts only from `self` and `cdnjs.cloudflare.com`, worker creation from `blob:` (required for the engine — see [How the Engine Loads](#how-the-engine-loads)), and outbound requests only to `self`, the two engine CDNs, and the Lichess Explorer API. Everything else is refused by the browser even if something on the page tried to load it.
+
+## Testing
+
+```bash
+npm test
+```
+
+Runs the whole suite via Node's built-in test runner (`node:test` — no Jest/Mocha/etc., keeping the zero-extra-tooling philosophy that already applies to the frontend). Currently 51 tests across four files, all passing:
+
+| File | Covers |
+|------|--------|
+| `tests/unit/utils.test.js` | PGN cleanup/parsing helpers (`stripPgnNoise`, `looksLikeFEN`, `parsePGNHeaders`) |
+| `tests/unit/analysis.test.js` | `classifyMove` (every classification tier and boundary, including the legacy-engine multiplier), `detectSacrifice`, `computeGameStats` (including the exact worked example from [Accuracy calculation](#accuracy-calculation)) |
+| `tests/unit/games.test.js` | `buildMoveAnalysisFromStored` — the save/reload FEN-chain reconstruction |
+| `tests/integration/auth.test.js` + `tests/integration/games.test.js` | The real Express app, boots on an ephemeral port against an isolated in-memory SQLite database — registration, login, session handling, and the full games CRUD including cross-user ownership isolation |
+
+**How the frontend tests work**, since the frontend is plain `<script>` files sharing one global scope rather than modules (`tests/helpers/loadFrontendScript.js`): the actual source files are loaded into a Node `vm` sandbox that stubs just enough of the browser environment (`Chess`, a settable `engineType`) for their pure logic to run — the real file content executes, nothing about the logic is reimplemented or mocked. This is the same technique used earlier in this project's development to verify the Stockfish worker-loading fix against the real library source before shipping it.
+
+A couple of functions were **extracted into pure, DOM-free pieces specifically to make them unit-testable**: `calculateStatistics()` (DOM-writing) now delegates to `computeGameStats()` (pure math) in `analysis.js`, and `applyStoredAnalysis()` similarly delegates to `buildMoveAnalysisFromStored()` in `games.js`. Both refactors are behavior-preserving — the DOM-facing functions still do exactly what they did before, they just hand the actual computation to a function a test can call directly.
+
+**This suite already found a real, pre-existing bug**, which is worth being upfront about rather than only listing what passes: `detectSacrifice()` (part of `Brilliant` move classification) compared the mover's own total material immediately before vs. immediately after their own move. Trying to write a genuine "this should return true" test case for it turned out to be impossible — a single legal chess move can never reduce the mover's own material (captures only remove the opponent's piece, promotions only ever increase value, castling doesn't change piece count). That comparison was structurally incapable of ever being true, which means **`Brilliant` had been unreachable, dead-code classification for the entire life of this feature** — no game, ever, could have earned that badge. It's fixed now (checks whether the piece just moved is immediately recapturable by the opponent for less than it's worth) and covered by four dedicated test cases, including the fix verified against a real constructed sacrifice position before being trusted.
+
+Known gap: there's no coverage yet for the DOM-facing rendering functions themselves (`calculateStatistics`, `applyStoredAnalysis`, anything in `board.js`/`ui.js`) — that would need a real DOM (e.g. `jsdom`), which this suite deliberately doesn't pull in yet to keep the dependency list minimal. The pure logic those functions delegate to is fully covered; the rendering glue around it isn't.
 
 ## How the Engine Loads
 

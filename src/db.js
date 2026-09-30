@@ -5,11 +5,18 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 
-const DATA_DIR = path.join(__dirname, '..', 'data');
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+// Tests set DB_PATH=:memory: so each test run gets a fresh, isolated
+// database with no cleanup required and no interference with the real
+// data/chess-analyzer.db file.
+const DB_PATH = process.env.DB_PATH || path.join(__dirname, '..', 'data', 'chess-analyzer.db');
 
-const db = new Database(path.join(DATA_DIR, 'chess-analyzer.db'));
-db.pragma('journal_mode = WAL');
+if (DB_PATH !== ':memory:') {
+  const dataDir = path.dirname(DB_PATH);
+  if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+}
+
+const db = new Database(DB_PATH);
+if (DB_PATH !== ':memory:') db.pragma('journal_mode = WAL'); // WAL isn't supported for in-memory databases
 db.pragma('foreign_keys = ON');
 
 db.exec(`

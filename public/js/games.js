@@ -147,9 +147,16 @@ async function loadSavedGame(id) {
 // Rebuilds moveAnalysis[] from a stored {san, classification, cpLoss, eval}
 // array — same fields analyzeGame() (analysis.js) computes, minus bestMove/pv/
 // lines, which aren't needed to redisplay a game (only to keep analyzing live).
-function applyStoredAnalysis(storedAnalysis) {
+// Pure reconstruction, no DOM/UI calls — takes the parsed moves[] array (from
+// chess.js history) and a stored {san, classification, cpLoss, eval}[]
+// payload, and rebuilds the same moveAnalysis[] shape analyzeGame()
+// (analysis.js) produces, by replaying the game through a scratch Chess()
+// instance to regenerate fenBefore/fenAfter for each move. Split out
+// specifically so this reconstruction is unit-testable; see
+// tests/unit/games.test.js.
+function buildMoveAnalysisFromStored(moves, storedAnalysis) {
   const tempGame = new Chess();
-  moveAnalysis = moves.map((move, i) => {
+  return moves.map((move, i) => {
     const fenBefore = tempGame.fen();
     tempGame.move(move);
     const fenAfter = tempGame.fen();
@@ -167,6 +174,10 @@ function applyStoredAnalysis(storedAnalysis) {
       lines: [],
     };
   });
+}
+
+function applyStoredAnalysis(storedAnalysis) {
+  moveAnalysis = buildMoveAnalysisFromStored(moves, storedAnalysis);
 
   renderMoveList();
   drawEvalGraph();
