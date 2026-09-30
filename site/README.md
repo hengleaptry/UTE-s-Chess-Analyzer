@@ -214,6 +214,28 @@ if (cpLoss <= 20 * thresholdMultiplier) {
 
 If the second-best line is at least a pawn (`100cp`) worse than the best, the position was "sharp" — most other moves would have been clearly worse, so finding a near-optimal one is genuinely notable (`great`). If the gap is small, several moves were roughly equivalent, so it's just `good`. This is a heuristic approximation of chess.com's own classifier, not an exact reproduction — see [Known Limitations](#known-limitations).
 
+### Accuracy calculation
+
+The White/Black accuracy percentages shown in the stats panel are **not** "100% minus the fraction of bad moves" — they're a continuous measure of average centipawn loss, computed in `calculateStatistics()`:
+
+```js
+const maxLossPerMove = 500; // 5 pawns treated as a "zero credit" move
+const whiteAcc = 100 - (whiteTotalLoss / (whiteMoves * maxLossPerMove)) * 100;
+```
+
+In plain terms: average every move's `cpLoss` for that side, scale it against a 500cp ceiling, subtract from 100. This means **a game with zero `Miss`/`Bad`/`Blunder` moves still won't show 100% accuracy**, and that's expected rather than a bug — every move carries some small `cpLoss` unless it's an exact tie with the engine's own top choice at that depth (transpositions, equally-reasonable alternatives, and ordinary search noise between two separately-analyzed positions all contribute a few centipawns), and those small amounts accumulate over a full game.
+
+Worked example, from a real analyzed game where every move classified as `Book`, `Good`, or `Best` (no mistakes at all):
+
+```
+White cpLoss per move: 5, 0, 9, 8, 4, 8, 17, 0, 9, 42, 13   → avg 10.45cp → 97.9% accuracy
+Black cpLoss per move: 7, 5, 0, 8, 4, 4, 0, 0, 5, 5          → avg 3.80cp  → 99.2% accuracy
+```
+
+This mirrors real chess.com/Lichess behavior — a genuinely mistake-free human game routinely lands in the high-80s to high-90s, not literally 100%, because matching the engine's exact top line on every single move essentially never happens.
+
+For comparison, chess.com's own accuracy metric isn't linear in centipawns — it's based on the *win-probability* delta between moves (via a logistic curve converting centipawns to an estimated win percentage), which is far more forgiving of small swings in already-decided positions and far less forgiving of the same centipawn swing in a dead-even position. Applying that curve to the same worked example above gives **White 96.1%, Black 98.4%** — in this particular game, actually slightly *lower* than the simpler linear formula, not higher, since a lot of the small losses happened in roughly balanced positions where the win-probability curve is steepest. Both are legitimate ways to define "accuracy"; this project uses the simpler linear version for now (see [Roadmap](#roadmap)).
+
 ## Engine Performance Settings
 
 Full-game analysis time is driven by **Engine Depth** and which engine is active (NNUE is roughly 2x faster than the legacy fallback per move):
@@ -550,6 +572,7 @@ Ideas under consideration, not commitments:
 - [ ] Mobile-friendly touch controls for annotations
 - [ ] Configurable classification thresholds in the UI
 - [ ] Re-analyze-and-update in place for a saved game, instead of only save-as-new
+- [ ] Switch accuracy to a win-probability-based curve (chess.com-style) instead of linear centipawn scaling — see [Accuracy calculation](#accuracy-calculation) for the tradeoff
 
 ## Contributing
 
